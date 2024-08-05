@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
+from sensor_msgs.msg import Imu
 import serial
 import time
 class MotorDriverNode(Node):
@@ -36,8 +37,9 @@ class MotorDriverNode(Node):
 
         # Initialize serial connection
         self.ser = serial.Serial(serial_port, baudrate)
-        
-
+        timer_period = 0.1 
+        self.timer = self.create_timer(timer_period, self.telemetry_callback)
+        self.publisher_ = self.create_publisher(Imu, 'imu/data', 10)
         # Create subscriber to /cmd_vel
         self.subscription = self.create_subscription(
             Twist,
@@ -52,9 +54,32 @@ class MotorDriverNode(Node):
             self.commands_callback,
             10)
         self.subscription_commands
-
+        self.imu_msg = Imu()
        
-    
+    def telemetry_callback(self):
+        if self.ser.in_waiting > 0:
+            line = ser.readline()
+            data_str = data.decode('utf-8').strip()
+            parts = data_str.split()
+            print(data_str)
+            identifier = ' '.join(parts[:4])
+            if identifier == '200 252 7 1':
+                # IMU gyro
+                gx, gy, gz = float(parts[4]), float(parts[5]), float(parts[6])
+                self.imu_msg.angular_velocity.x = gx
+                self.imu_msg.angular_velocity.y = gy
+                self.imu_msg.angular_velocity.z = gz
+            elif identifier == '200 252 7 3':
+                # IMU acceleration
+                ax, ay, az = float(parts[4]), float(parts[5]), float(parts[6])
+                self.imu_msg.linear_acceleration.x = ax
+                self.imu_msg.linear_acceleration.y = ay
+                self.imu_msg.linear_acceleration.z = az
+                if imu_data:
+        self.imu_msg.header.stamp = self.get_clock().now().to_msg()
+        self.imu_msg.header.frame_id = 'imu_link'           
+        self.publisher_.publish(self.imu_msg)
+
     def make_packet(self, function_id, data=None):
         packet = [255, 252, 4, function_id]
 
@@ -119,9 +144,6 @@ class MotorDriverNode(Node):
         linear_velocity = msg.linear.x
         angular_velocity = msg.angular.z
         
-
-        # Send command to motor driver over serial
-        self.ser.write(command.encode('utf-8'))
         
 def main(args=None):
     rclpy.init(args=args)
