@@ -1,8 +1,9 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from std_msgs.msg import String
 import serial
-
+import time
 class MotorDriverNode(Node):
 
     FUNC_PWM_VACUUM_START=0x01
@@ -27,15 +28,15 @@ class MotorDriverNode(Node):
         super().__init__('motor_driver_node')
 
         # Load parameters from YAML file
-        self.declare_parameter('serial_port', '/dev/ttyUSB0')
+        self.declare_parameter('serial_port', '/dev/ttyROS_BOARD')
         self.declare_parameter('baudrate', 115200)
 
         serial_port = self.get_parameter('serial_port').get_parameter_value().string_value
         baudrate = self.get_parameter('baudrate').get_parameter_value().integer_value
 
         # Initialize serial connection
-        self.ser = serial.Serial(serial_port, baudrate, timeout=1)
-        self.ser.flush()
+        self.ser = serial.Serial(serial_port, baudrate)
+        
 
         # Create subscriber to /cmd_vel
         self.subscription = self.create_subscription(
@@ -51,6 +52,8 @@ class MotorDriverNode(Node):
             self.commands_callback,
             10)
         self.subscription_commands
+
+       
     
     def make_packet(self, function_id, data=None):
         packet = [255, 252, 4, function_id]
@@ -65,8 +68,9 @@ class MotorDriverNode(Node):
 
     def send_packet(self, packet):
         print("Sending packet: ", packet)
-        self.serialport.write(packet)
-        # time.sleep(0.001)
+        self.ser.write(packet)
+        time.sleep(0.1)
+        
 
     def set_side_brush(self, command, rpm):
         if command:
@@ -95,17 +99,17 @@ class MotorDriverNode(Node):
     def commands_callback(self, msg):
         # Send received command directly to motor driver over serial
         if msg.data == "bottoom_brush_on":
-            self.set_bottom_brush(command=true, rpm=60)
+            self.set_bottom_brush(command=True, rpm=60)
         elif msg.data == "bottoom_brush_off":
-            self.set_bottom_brush(command=false, rpm=60)
+            self.set_bottom_brush(command=False, rpm=60)
         elif msg.data == "side_brush_on":
-            self.set_side_brush(command=false, rpm=60)
+            self.set_side_brush(command=False, rpm=60)
         elif msg.data == "side_brush_off":
-            self.set_bottom_brush(command=false, rpm=60)
+            self.set_bottom_brush(command=False, rpm=60)
         elif msg.data == "vacuum_on":
-            self.set_vacuum(command=true)
+            self.set_vacuum(command=True)
         elif msg.data == "vacuum_off":
-            self.set_bottom_brush(command=false)
+            self.set_bottom_brush(command=False)
         
         else:
             self.get_logger().info(f'Invalid string command: {msg.data}')
