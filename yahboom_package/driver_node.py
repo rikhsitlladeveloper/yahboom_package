@@ -98,18 +98,18 @@ class MotorDriverNode(Node):
     
     def commands_callback(self, msg):
         # Send received command directly to motor driver over serial
-        if msg.data == "bottoom_brush_on":
+        if msg.data == "bottom_brush_on":
             self.set_bottom_brush(command=True, rpm=60)
-        elif msg.data == "bottoom_brush_off":
+        elif msg.data == "bottom_brush_off":
             self.set_bottom_brush(command=False, rpm=60)
         elif msg.data == "side_brush_on":
-            self.set_side_brush(command=False, rpm=60)
+            self.set_side_brush(command=True, rpm=60)
         elif msg.data == "side_brush_off":
-            self.set_bottom_brush(command=False, rpm=60)
+            self.set_side_brush(command=False, rpm=60)
         elif msg.data == "vacuum_on":
             self.set_vacuum(command=True)
         elif msg.data == "vacuum_off":
-            self.set_bottom_brush(command=False)
+            self.set_vacuum(command=False)
         
         else:
             self.get_logger().info(f'Invalid string command: {msg.data}')
