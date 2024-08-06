@@ -5,6 +5,8 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Imu
 import serial
 import time
+from yahboom_interfaces.msg import Status
+
 class MotorDriverNode(Node):
 
     FUNC_PWM_VACUUM_START=0x01
@@ -40,6 +42,7 @@ class MotorDriverNode(Node):
         timer_period = 0.1 
         self.timer = self.create_timer(timer_period, self.telemetry_callback)
         self.publisher_ = self.create_publisher(Imu, 'imu/data', 10)
+        self.publisher_ = self.create_publisher(Status, 'motor/status', 10)
         # Create subscriber to /cmd_vel
         self.subscription = self.create_subscription(
             Twist,
@@ -55,10 +58,10 @@ class MotorDriverNode(Node):
             10)
         self.subscription_commands
         self.imu_msg = Imu()
-       
+        self.status = Status()
     def telemetry_callback(self):
         if self.ser.in_waiting > 0:
-            line = ser.readline()
+            data = self.ser.readline()
             data_str = data.decode('utf-8').strip()
             parts = data_str.split()
             print(data_str)
@@ -75,7 +78,23 @@ class MotorDriverNode(Node):
                 self.imu_msg.linear_acceleration.x = ax
                 self.imu_msg.linear_acceleration.y = ay
                 self.imu_msg.linear_acceleration.z = az
-                if imu_data:
+            elif identifier == '200 252 6 7':
+                # Vacuum motor
+                self.status.vacuum_motor = float(parts[4]), float(parts[5])
+            elif identifier == '200 252 5 9':
+                # Brush motor
+                self.status.brush_motor = float(parts[4])
+            elif identifier == '200 252 5 11':
+                # Long Brush motor
+                self.status.long_brush_motor = float(parts[4])
+            elif identifier == '200 252 9 13 1':
+                # Servo Left
+                self.status.servo_motor[0] = float(parts[5])
+            elif identifier == '200 252 9 13 2':
+                # Servo Right
+                self.status.servo_motor[1] = float(parts[5])
+            
+
         self.imu_msg.header.stamp = self.get_clock().now().to_msg()
         self.imu_msg.header.frame_id = 'imu_link'           
         self.publisher_.publish(self.imu_msg)
