@@ -6,6 +6,7 @@ from sensor_msgs.msg import Imu
 import serial
 import time
 from yahboom_interfaces.msg import Status
+import math
 
 class MotorDriverNode(Node):
 
@@ -42,7 +43,7 @@ class MotorDriverNode(Node):
         timer_period = 0.1 
         self.timer = self.create_timer(timer_period, self.telemetry_callback)
         self.publisher_ = self.create_publisher(Imu, 'imu/data', 10)
-        self.publisher_ = self.create_publisher(Status, 'motor/status', 10)
+        self.status_publisher = self.create_publisher(Status, 'motor/status', 10)
         # Create subscriber to /cmd_vel
         self.subscription = self.create_subscription(
             Twist,
@@ -59,6 +60,14 @@ class MotorDriverNode(Node):
         self.subscription_commands
         self.imu_msg = Imu()
         self.status = Status()
+        self.servo_motor = [-1, -1]
+        self.position = [0 , 0] 
+        self.direction = [0 , 0]
+        self.emergancy = [0 , 0]
+        self.error = [0 , 0]
+        self.mode = [0 , 0]
+        self.max_rpm = 50
+
     def telemetry_callback(self):
         if self.ser.in_waiting > 0:
             data = self.ser.readline()
@@ -66,6 +75,7 @@ class MotorDriverNode(Node):
             parts = data_str.split()
             print(data_str)
             identifier = ' '.join(parts[:4])
+            identifier_2 = ' '.join(parts[:5])
             if identifier == '200 252 7 1':
                 # IMU gyro
                 gx, gy, gz = float(parts[4]), float(parts[5]), float(parts[6])
@@ -80,21 +90,68 @@ class MotorDriverNode(Node):
                 self.imu_msg.linear_acceleration.z = az
             elif identifier == '200 252 6 7':
                 # Vacuum motor
-                self.status.vacuum_motor = float(parts[4]), float(parts[5])
+                self.status.vacuum_motor = int(parts[4])
             elif identifier == '200 252 5 9':
                 # Brush motor
-                self.status.brush_motor = float(parts[4])
+                self.status.brush_motor = int(parts[4])
             elif identifier == '200 252 5 11':
                 # Long Brush motor
-                self.status.long_brush_motor = float(parts[4])
-            elif identifier == '200 252 9 13 1':
-                # Servo Left
-                self.status.servo_motor[0] = float(parts[5])
-            elif identifier == '200 252 9 13 2':
-                # Servo Right
-                self.status.servo_motor[1] = float(parts[5])
-            
+                self.status.long_brush_motor = int(parts[4])
 
+            elif identifier_2 == '200 252 9 13 1':
+                # Servo Left
+                self.servo_motor[0] = int(parts[5])
+            elif identifier_2 == '200 252 9 13 2':
+                # Servo Right
+                self.servo_motor[1] = int(parts[5])
+            elif identifier_2 == '200 252 9 17 1':
+                # Servo Left Encoder
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.position[0] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 17 2':
+                # Servo Right Encoder
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.position[1] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 21 1':
+                # Servo Left Direction
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.direction[0] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 21 2':
+                # Servo Right Direction
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.direction[1] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 25 1':
+                # Servo Left Emergancy
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.emergancy[0] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 25 2':
+                # Servo Right Emergancy
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.emergancy[1] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 29 1':
+                # Servo Left Error
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.error[0] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 29 2':
+                # Servo Right Error
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.error[1] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 33 1':
+                # Servo Left Mode
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.mode[0] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+            elif identifier_2 == '200 252 9 33 2':
+                # Servo Right Mode
+                byte_sequence = [int(parts[5]), int(parts[6]), int(parts[7]), int(parts[8])]
+                self.mode[1] = int.from_bytes(byte_sequence, byteorder='little', signed=True)
+        
+        self.status.servo_motor_error = self.error
+        self.status.servo_motor_mode = self.mode
+        self.status.servo_motor_emergancy = self.emergancy
+        self.status.servo_motor_direction = self.direction
+        self.status.servo_position = self.position     
+        self.status.servo_motor_actual_position = self.servo_motor
+        self.status_publisher.publish(self.status)
         self.imu_msg.header.stamp = self.get_clock().now().to_msg()
         self.imu_msg.header.frame_id = 'imu_link'           
         self.publisher_.publish(self.imu_msg)
@@ -113,7 +170,7 @@ class MotorDriverNode(Node):
     def send_packet(self, packet):
         print("Sending packet: ", packet)
         self.ser.write(packet)
-        time.sleep(0.1)
+        time.sleep(0.0001)
         
 
     def set_side_brush(self, command, rpm):
@@ -157,11 +214,43 @@ class MotorDriverNode(Node):
         
         else:
             self.get_logger().info(f'Invalid string command: {msg.data}')
+    
+    def set_speed_mode(self):
+        for id in range(1,2):
+            pack = [255, 252 ,6 ,8, id, 3]
+            self.send_packet(bytearray(pack))
+            pack = [255, 252 ,6 ,24, id, 2]
+            self.send_packet(bytearray(pack))
+            pack = [255, 252 ,6 ,13, id, 15]
+            self.send_packet(bytearray(pack))
+    
+    def check_speed_limit(self, speed):
+        if (abs(speed) > (self.max_rpm )):
+            speed = (self.max_rpm) * (speed / abs(speed))
         
+        return speed
+    
+    def calculate_right_speed(self, x, z):
+        speed = 60 * (2 * x + z * self.wheelbase) / (2 * self.radius * 2 * math.pi) 
+        rpm = self.check_speed_limit(speed)
+
+    def calculate_left_speed(self, x, z):
+        speed = 60 * -(2 * x - z * self.wheelbase) / (2 * self.radius * 2 * math.pi) 
+        rpm = self.check_speed_limit(speed)
+    
     def cmd_vel_callback(self, msg):
+        if self.mode[0] == 0 or self.mode[1] == 0:
+            self.set_speed_mode()
         # Convert Twist message to motor driver command
-        linear_velocity = msg.linear.x
-        angular_velocity = msg.angular.z
+        elif msg.linear.x == 0 and msg.angular.z == 0:
+            pack = [255, 252 ,5 ,24, 1]
+            self.send_packet(bytearray(pack))
+            pack = [255, 252 ,5 ,24, 1]
+            self.send_packet(bytearray(pack))
+        else:
+            self.calculate_right_speed(msg.linear.x, msg.angular.z)
+            self.calculate_left_speed(msg.linear.x, msg.angular.z)
+            
         
         
 def main(args=None):
